@@ -183,11 +183,12 @@ def Suff_Grobal(data, x, x_base_name,backdoor,order=True):
     x_df=x.unique()
     suf_score_sum=0
     count=0
+    score_df=[]
     for m  in x_df:
         if order:
             x_cf=[j for j in x_df if j > m]
         else:
-            x_cf=[j for j in x_df if j != x_base]
+            x_cf=[j for j in x_df if j != m]
         for  i in x_cf:
         #sufficiency_score
             bdp_suf_sum=0
@@ -234,7 +235,7 @@ def Suff_Grobal(data, x, x_base_name,backdoor,order=True):
             #print("c2:",suf_p3) 
 
 
-            if suf_p3==0: score==0
+            if suf_p3==0: score=0
             else: score=(bdp_suf-suf_p2)/suf_p3
 
             #print(m, i, "suf_score:",score)
@@ -244,19 +245,21 @@ def Suff_Grobal(data, x, x_base_name,backdoor,order=True):
                 score=0
             suf_score_sum+=score
             count+=1
+            score_df.append(score)
             
             #print(suf_score_sum)
             #print("-------------------------------")
         #print("ave",ave_score)
 
     ave_score=suf_score_sum/count
-    return ave_score
+    return ave_score, score_df
 
 def Nec_Grobal(data, x, x_base_name,backdoor,order=True):
     nec_sum=0
     x_df=x.unique()
     nec_score_sum=0
     count=0
+    score_df=[]
     for m  in x_df:
         suf_score_sum2=0
         if order:
@@ -301,7 +304,7 @@ def Nec_Grobal(data, x, x_base_name,backdoor,order=True):
             nec_p3=len(nec_var_num3)/len(nec_var2)
             #print("c2:",suf_p3) 
 
-            if nec_p3==0: score==0
+            if nec_p3==0: score=0
             else: score=(bdp_nec-nec_p2)/nec_p3
             if score > 1:
                 score=1
@@ -309,17 +312,19 @@ def Nec_Grobal(data, x, x_base_name,backdoor,order=True):
                 score=0
             nec_score_sum+=score 
             count+=1
+            score_df.append(score)
             #print(m, i, "nec_score:",score)
             #print("-------------------------------")
 
     ave_score=nec_score_sum/count
-    return ave_score    
+    return ave_score    , score_df
 
 
 def NeSuf_Grobal(data, x, x_base_name,backdoor, order=True):
     x_df=x.unique()
     count=0
     necsuf_score_sum=0
+    score_df=[]
     for m  in x_df:
         suf_score_sum2=0
         if order:
@@ -376,6 +381,8 @@ def NeSuf_Grobal(data, x, x_base_name,backdoor, order=True):
                 pr_necsuf=0
             necsuf_score_sum+=pr_necsuf 
             count+=1
+
+            score_df.append(pr_necsuf)
             #print(m, i, "nec_score:",score)
             #print("-------------------------------")
 
@@ -384,61 +391,62 @@ def NeSuf_Grobal(data, x, x_base_name,backdoor, order=True):
 
 
 
-    #bounded
-def Nec_Bounds(data, x, x_base_name):
+def Tian_Bounds_Nec(data, x):
+    exp_df=pd.crosstab(data[x.name], data['Model_pred'])
     max_b=[]
     min_b=[]
     x_base=np.sort(x.unique())#ベースの値
     n_x_base=len(x_base)
-    df=pd.crosstab(data[x_base_name], data['Model_pred'], normalize=True)#同時確率を求めるためのクロス表
-    for i, n in zip(x_base, range(n_x_base)):
+    for i in x_base:
         x_cf=np.sort(X_CF(x, i))#ベースに対する反事実値
         n_x_cf=len(x_cf)
-        df2=df.T[x_cf]
-        pr_o_x=df.iloc[n,1]#pr(o, x)
-        for j,m in zip(x_cf,range(n_x_cf)): 
-            #上限
-            pr_o2_do_x2=len(data.loc[(data[x_base_name]==i)&(data["Model_pred"]==0)])/len(data.loc[(data[x_base_name]==i)])
-            pr_o2_x2=df2.T.iloc[m,0]
-            max_bound=(pr_o2_do_x2-pr_o2_x2)/pr_o_x
-            max_bound=min(max_bound, 1)
-            max_b.append(max_bound)
+        for j in x_cf:
+            cross = exp_df.iloc[[i,j]]
+            cross_sum = sum(cross.values).sum()
 
             #下限
-            pr_o_do_x2=len(data.loc[(data[x_base_name]==i)&(data["Model_pred"]==1)])/len(data.loc[(data[x_base_name]==i)])
-            pr_o_x2=df2.T.iloc[m,1]
-            min_bound=(pr_o_x+pr_o_x2-pr_o_do_x2)/pr_o_x
-            min_bound=max(min_bound, 0)
-            min_b.append(min_bound)
+            p_y0 = cross.iloc[:,0].sum()/cross_sum#
+            p_y0lx_base=cross.iloc[0,0]/cross.iloc[0].sum()#
+            p_y1_x_cf=cross.iloc[1,1]/cross_sum
+            min_bounds=(p_y0lx_base-p_y0)/p_y1_x_cf
+            min_bounds=max(min_bounds, 0)
+            min_b.append(min_bounds)
 
-    return np.mean(min_b), np.mean(max_b)
+            #上限
+            p_y0_x_base=cross.iloc[0,0]/cross_sum
+            max_bounds = (p_y0lx_base-p_y0_x_base)/p_y1_x_cf
+            max_bounds = min(max_bounds, 1)
+            max_b.append(max_bounds)
+
+    return max_b, min_b
 
 
-def Suf_Bounds(data, x, x_base_name):
+def Tian_Bounds_Suf(data, x):
+    exp_df=pd.crosstab(data[x.name], data['Model_pred'])
     max_b=[]
     min_b=[]
     x_base=np.sort(x.unique())#ベースの値
     n_x_base=len(x_base)
-    df=pd.crosstab(data[x_base_name], data['Model_pred'], normalize=True)#同時確率を求めるためのクロス表
-    for i, n in zip(x_base, range(n_x_base)):
+    for i in x_base:
         x_cf=np.sort(X_CF(x, i))#ベースに対する反事実値
         n_x_cf=len(x_cf)
-        df2=df.T[x_cf]
-        pr_o_x=df.iloc[n,1]#pr(o, x)
-        pr_o2_x=df.iloc[n,0]#pr(o', x)
-        for j,m in zip(x_cf,range(n_x_cf)): 
-            #上限
-            pr_o_do_x=len(data.loc[(data[x_base_name]==j)&(data["Model_pred"]==1)])/len(data.loc[(data[x_base_name]==j)])
-            pr_o2_x2=df2.T.iloc[m,0]
-            max_bound=(pr_o_do_x-pr_o_x)/pr_o2_x2
-            max_bound=min(max_bound, 1)
-            max_b.append(max_bound)
+        for j in x_cf:
+            cross = exp_df.iloc[[i,j]]
+            cross_sum = sum(cross.values).sum()
 
             #下限
-            pr_o2_do_x=len(data.loc[(data[x_base_name]==j)&(data["Model_pred"]==0)])/len(data.loc[(data[x_base_name]==j)])
-            
-            min_bound=(pr_o2_x+pr_o2_x2-pr_o2_do_x)/pr_o2_x2
-            min_bound=max(min_bound, 0)
-            min_b.append(min_bound)
+            p_y1 = cross.iloc[:,1].sum()/cross_sum#
+            p_y1lx_cf=cross.iloc[1,1]/cross.iloc[1].sum()#
+            p_y0_x_base=cross.iloc[0,0]/cross_sum
+            min_bounds=(p_y1lx_cf-p_y1)/p_y0_x_base
+            min_bounds=max(min_bounds, 0)
+            min_b.append(min_bounds)
 
-    return np.mean(min_b), np.mean(max_b)    
+            #上限
+            p_y1_x_cf=cross.iloc[1,1]/cross_sum
+            max_bounds = (p_y1lx_cf-p_y1_x_cf)/p_y0_x_base
+            max_bounds = min(max_bounds, 1)
+            max_b.append(max_bounds)
+
+           
+    return max_b, min_b    
